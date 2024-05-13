@@ -18,6 +18,8 @@ from bpy.props import (
     IntProperty,
 )
 from bpy.types import PropertyGroup
+from bpy.app.handlers import persistent
+
 
 
 def set_dirty(self, context):
@@ -95,7 +97,7 @@ class GU_PG_EnforceProps(PropertyGroup):
             self.last_item_count = objects_count
         return True
 
-
+@persistent
 def enforce(scene):
     for col in scene.collection.children_recursive:
         props = col.enforce
