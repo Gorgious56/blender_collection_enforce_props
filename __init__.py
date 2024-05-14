@@ -21,17 +21,22 @@ from bpy.types import PropertyGroup
 from bpy.app.handlers import persistent
 
 
-
 def set_dirty(self, context):
     self.is_dirty = True
     self.should_enforce_any = any([getattr(self, attr) for attr in self.__annotations__ if attr.endswith("enforce")])
 
 
 class GU_PG_EnforceProps(PropertyGroup):
-    NOT_ENFORCED_ATTRIBUTE_NAMES = ("is_dirty", "last_item_count", "should_enforce_any")
+    NOT_ENFORCED_ATTRIBUTE_NAMES = ("is_dirty", "last_item_count", "should_enforce_any", "priority")
     is_dirty: BoolProperty(default=False)
     last_item_count: IntProperty(default=-1, update=set_dirty)
     should_enforce_any: BoolProperty(default=False)
+    priority: IntProperty(
+        soft_min=0,
+        soft_max=255,
+        description="Enforcement Priority. Highest priority rules will be applied last",
+        update=set_dirty,
+    )
 
     show_name_enforce: BoolProperty(default=False, update=set_dirty)
     show_name: BoolProperty(default=False, update=set_dirty)
@@ -75,8 +80,18 @@ class GU_PG_EnforceProps(PropertyGroup):
         update=set_dirty,
     )
 
+    @property
+    def enforceable_props(self):
+        return [
+            p
+            for p in self.__annotations__
+            if p not in GU_PG_EnforceProps.NOT_ENFORCED_ATTRIBUTE_NAMES and not p.endswith("enforce")
+        ]
+
     def draw(self, layout):
         layout = layout.column(align=True)
+        layout.prop(self, "is_dirty", toggle=True, text="Force Update", icon="FILE_REFRESH")
+        layout.prop(self, "priority", text="Priority")
         for attr in self.__annotations__:
             if attr in GU_PG_EnforceProps.NOT_ENFORCED_ATTRIBUTE_NAMES:
                 continue
@@ -89,17 +104,16 @@ class GU_PG_EnforceProps(PropertyGroup):
             col.active = getattr(self, attr + "_enforce")
 
     def should_update_enforcement(self):
-        if not self.should_enforce_any:
-            return self.is_dirty
-        if (objects_count := len(self.id_data.all_objects)) == self.last_item_count:
-            return self.is_dirty
-        else:
+        if (objects_count := len(self.id_data.all_objects)) != self.last_item_count:
             self.last_item_count = objects_count
-        return True
+            return self.should_enforce_any or self.is_dirty
+        return self.is_dirty
+
 
 @persistent
 def enforce(scene):
-    for col in scene.collection.children_recursive:
+    collections = set(sorted(scene.collection.children_recursive, key=lambda c: c.enforce.priority))
+    for col in collections:
         props = col.enforce
         children_recursive = col.children_recursive
         for col_children in children_recursive:
@@ -108,16 +122,12 @@ def enforce(scene):
                 break
         if not props.should_update_enforcement():
             continue
-        for attr in props.__annotations__:
-            if attr in GU_PG_EnforceProps.NOT_ENFORCED_ATTRIBUTE_NAMES:
-                continue
-            if attr.endswith("enforce"):
-                continue
+        for attr in props.enforceable_props:
             if getattr(props, attr + "_enforce"):
                 for obj in col.all_objects:
                     setattr(obj, attr, getattr(props, attr))
-            for col_children in children_recursive:
-                col_children.enforce.is_dirty = True
+        for col_children in children_recursive:
+            col_children.enforce.is_dirty = True
 
         props.is_dirty = False
 
