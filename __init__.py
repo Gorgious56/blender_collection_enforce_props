@@ -122,6 +122,84 @@ def enforce(scene):
         props.is_dirty = False
 
 
+def draw_OBJECT_PT_DISPLAY(self, context):
+    enforced_props = {}
+    for col in context.scene.collection.children_recursive:
+        if context.object.name in col.all_objects:
+            for enforceable_prop in col.enforce.enforceable_props:
+                if getattr(col.enforce, enforceable_prop + "_enforce"):
+                    enforced_props[enforceable_prop] = True
+
+    layout = self.layout
+    layout.use_property_split = True
+    if any(enforced_props.values()):
+        layout.label(text="Some properties are enforced by Collections.", icon="INFO")
+
+    obj = context.object
+    obj_type = obj.type
+    is_geometry = obj_type in {"MESH", "CURVE", "SURFACE", "META", "FONT", "VOLUME", "CURVES", "POINTCLOUD"}
+    has_bounds = is_geometry or obj_type in {"LATTICE", "ARMATURE"}
+    is_wire = obj_type in {"CAMERA", "EMPTY"}
+    is_empty_image = obj_type == "EMPTY" and obj.empty_display_type == "IMAGE"
+    is_dupli = obj.instance_type != "NONE"
+    is_gpencil = obj_type == "GPENCIL"
+
+    col = layout.column(heading="Show")
+    col_name = col.column()
+    col_name.prop(obj, "show_name", text="Name")
+    col_name.enabled = not enforced_props.get("show_name", False)
+    col_axis = col.column()
+    col_axis.prop(obj, "show_axis", text="Axes")
+    col_axis.enabled = not enforced_props.get("show_axis", False)
+
+    # Makes no sense for cameras, armatures, etc.!
+    # but these settings do apply to dupli instances
+    if is_geometry or is_dupli:
+        col_wireframe = col.column()
+        col_wireframe.prop(obj, "show_wire", text="Wireframe")
+        col_wireframe.enabled = not enforced_props.get("show_wire", False)
+    if obj_type == "MESH" or is_dupli:
+        col_edges = col.column()
+        col_edges.prop(obj, "show_all_edges", text="All Edges")
+        col_edges.enabled = not enforced_props.get("show_all_edges", False)
+    if is_geometry:
+        col_texture_space = col.column()
+        col_texture_space.prop(obj, "show_texture_space", text="Texture Space")
+        col_texture_space.enabled = not enforced_props.get("show_texture_space", False)
+        col.prop(obj.display, "show_shadows", text="Shadow")
+    col_in_front = col.column()
+    col_in_front.prop(obj, "show_in_front", text="In Front")
+    col_in_front.enabled = not enforced_props.get("show_in_front", False)
+    # if obj_type == 'MESH' or is_empty_image:
+    #    col.prop(obj, "show_transparent", text="Transparency")
+    sub = layout.column()
+    if is_wire:
+        # wire objects only use the max. display type for duplis
+        sub.active = is_dupli
+    sub.prop(obj, "display_type", text="Display As")
+    sub.enabled = not enforced_props.get("display_type", False)
+
+    if is_geometry or is_dupli or is_empty_image or is_gpencil:
+        # Only useful with object having faces/materials...
+        col_color = col.column()
+        col_color.prop(obj, "color")
+        col_color.enabled = not enforced_props.get("color", False)
+
+    if has_bounds:
+        col = layout.column(align=False, heading="Bounds")
+        col.use_property_decorate = False
+        row = col.row(align=True)
+        sub = row.row(align=True)
+        sub.prop(obj, "show_bounds", text="")
+        sub = sub.row(align=True)
+        sub.active = obj.show_bounds or (obj.display_type == "BOUNDS")
+        sub.prop(obj, "display_bounds_type", text="")
+        row.prop_decorator(obj, "display_bounds_type")
+
+
+draw_OBJECT_PT_DISPLAY.previous_draw = None
+
+
 class GU_PT_collection_enforce(bpy.types.Panel):
     bl_label = "Enforce"
     bl_idname = "GU_PT_collection_enforce"
@@ -134,17 +212,22 @@ class GU_PT_collection_enforce(bpy.types.Panel):
 
 
 def register():
+    draw_OBJECT_PT_DISPLAY.previous_draw = bpy.types.OBJECT_PT_display.draw
+    bpy.types.OBJECT_PT_display.draw = draw_OBJECT_PT_DISPLAY
+
     bpy.utils.register_class(GU_PT_collection_enforce)
     bpy.utils.register_class(GU_PG_EnforceProps)
     bpy.types.Collection.enforce = PointerProperty(type=GU_PG_EnforceProps)
-    bpy.app.handlers.depsgraph_update_pre.append(enforce)
+    bpy.app.handlers.depsgraph_update_post.append(enforce)
 
 
 def unregister():
-    bpy.app.handlers.depsgraph_update_pre.remove(enforce)
+    bpy.app.handlers.depsgraph_update_post.remove(enforce)
     del bpy.types.Collection.enforce
     bpy.utils.unregister_class(GU_PG_EnforceProps)
     bpy.utils.unregister_class(GU_PT_collection_enforce)
+
+    bpy.types.OBJECT_PT_display.draw = draw_OBJECT_PT_DISPLAY.previous_draw
 
 
 if __name__ == "__main__":
