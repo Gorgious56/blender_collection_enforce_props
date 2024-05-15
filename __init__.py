@@ -23,40 +23,40 @@ from bpy.app.handlers import persistent
 
 def set_dirty(self, context):
     self.is_dirty = True
-    self.should_enforce_any = any([getattr(self, attr) for attr in self.__annotations__ if attr.endswith("enforce")])
+    self.should_enforce_any = any(getattr(self, attr) for attr in self.__annotations__ if attr.endswith("enforce"))
 
 
 class GU_PG_EnforceProps(PropertyGroup):
-    NOT_ENFORCED_ATTRIBUTE_NAMES = ("is_dirty", "last_item_count", "should_enforce_any", "priority")
-    is_dirty: BoolProperty(default=False)
-    last_item_count: IntProperty(default=-1, update=set_dirty)
-    should_enforce_any: BoolProperty(default=False)
+    NOT_ENFORCED_ATTRIBUTE_NAMES = ("is_dirty", "last_item_count", "should_enforce_any", "priority")  # type: ignore
+    is_dirty: BoolProperty(default=False)  # type: ignore
+    last_item_count: IntProperty(default=-1, update=set_dirty)  # type: ignore
+    should_enforce_any: BoolProperty(default=False)  # type: ignore
     priority: IntProperty(
         soft_min=0,
         soft_max=255,
         description="Enforcement Priority. Highest priority rules will be applied last",
         update=set_dirty,
-    )
+    )  # type: ignore
 
-    show_name_enforce: BoolProperty(default=False, update=set_dirty)
-    show_name: BoolProperty(default=False, update=set_dirty)
+    show_name_enforce: BoolProperty(default=False, update=set_dirty)  # type: ignore
+    show_name: BoolProperty(default=False, update=set_dirty)  # type: ignore
 
-    show_axis_enforce: BoolProperty(default=False, update=set_dirty)
-    show_axis: BoolProperty(default=False, update=set_dirty)
+    show_axis_enforce: BoolProperty(default=False, update=set_dirty)  # type: ignore
+    show_axis: BoolProperty(default=False, update=set_dirty)  # type: ignore
 
-    show_wire_enforce: BoolProperty(default=False, update=set_dirty)
-    show_wire: BoolProperty(default=False, update=set_dirty)
+    show_wire_enforce: BoolProperty(default=False, update=set_dirty)  # type: ignore
+    show_wire: BoolProperty(default=False, update=set_dirty)  # type: ignore
 
-    show_all_edges_enforce: BoolProperty(default=False, update=set_dirty)
-    show_all_edges: BoolProperty(default=False, update=set_dirty)
+    show_all_edges_enforce: BoolProperty(default=False, update=set_dirty)  # type: ignore
+    show_all_edges: BoolProperty(default=False, update=set_dirty)  # type: ignore
 
-    show_texture_space_enforce: BoolProperty(default=False, update=set_dirty)
-    show_texture_space: BoolProperty(default=False, update=set_dirty)
+    show_texture_space_enforce: BoolProperty(default=False, update=set_dirty)  # type: ignore
+    show_texture_space: BoolProperty(default=False, update=set_dirty)  # type: ignore
 
-    show_in_front_enforce: BoolProperty(default=False, update=set_dirty)
-    show_in_front: BoolProperty(default=False, update=set_dirty)
+    show_in_front_enforce: BoolProperty(default=False, update=set_dirty)  # type: ignore
+    show_in_front: BoolProperty(default=False, update=set_dirty)  # type: ignore
 
-    display_type_enforce: BoolProperty(default=False, update=set_dirty)
+    display_type_enforce: BoolProperty(default=False, update=set_dirty)  # type: ignore
     display_type: EnumProperty(
         items=(
             ("BOUNDS", "Bounds", ""),
@@ -67,9 +67,9 @@ class GU_PG_EnforceProps(PropertyGroup):
         default="TEXTURED",
         name="Display",
         update=set_dirty,
-    )
+    )  # type: ignore
 
-    color_enforce: BoolProperty(default=False, update=set_dirty)
+    color_enforce: BoolProperty(default=False, update=set_dirty)  # type: ignore
     color: FloatVectorProperty(
         subtype="COLOR",
         size=4,
@@ -78,7 +78,7 @@ class GU_PG_EnforceProps(PropertyGroup):
         default=(1, 1, 1, 1),
         name="Color",
         update=set_dirty,
-    )
+    )  # type: ignore
 
     @property
     def enforceable_props(self):
@@ -98,10 +98,10 @@ class GU_PG_EnforceProps(PropertyGroup):
             if attr.endswith("enforce"):
                 continue
             row = layout.row(align=True, heading=attr.replace("_", " ").title())
-            row.prop(self, attr + "_enforce", text="")
+            row.prop(self, f"{attr}_enforce", text="")
             col = row.row(align=True)
             col.prop(self, attr, text="")
-            col.active = getattr(self, attr + "_enforce")
+            col.active = getattr(self, f"{attr}_enforce")
 
     def should_update_enforcement(self):
         if (objects_count := len(self.id_data.all_objects)) != self.last_item_count:
@@ -112,7 +112,8 @@ class GU_PG_EnforceProps(PropertyGroup):
 
 @persistent
 def enforce(scene):
-    collections = set(sorted(scene.collection.children_recursive, key=lambda c: c.enforce.priority))
+    collections = [c for c in scene.collection.children_recursive if c.enforce.should_enforce_any]
+    collections = set(sorted(collections, key=lambda c: c.enforce.priority))
     for col in collections:
         props = col.enforce
         children_recursive = col.children_recursive
@@ -123,7 +124,7 @@ def enforce(scene):
         if not props.should_update_enforcement():
             continue
         for attr in props.enforceable_props:
-            if getattr(props, attr + "_enforce"):
+            if getattr(props, f"{attr}_enforce"):
                 for obj in col.all_objects:
                     setattr(obj, attr, getattr(props, attr))
         for col_children in children_recursive:
@@ -137,7 +138,7 @@ def draw_OBJECT_PT_DISPLAY(self, context):
     for col in context.scene.collection.children_recursive:
         if context.object.name in col.all_objects:
             for enforceable_prop in col.enforce.enforceable_props:
-                if getattr(col.enforce, enforceable_prop + "_enforce"):
+                if getattr(col.enforce, f"{enforceable_prop}_enforce"):
                     enforced_props[enforceable_prop] = True
 
     layout = self.layout
